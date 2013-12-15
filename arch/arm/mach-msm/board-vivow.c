@@ -4667,10 +4667,12 @@ static int __init pmem_adsp_size_setup(char *p)
 early_param("pmem_adsp_size", pmem_adsp_size_setup);
 
 #ifdef CONFIG_ION_MSM
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 static struct ion_co_heap_pdata co_ion_pdata = {
 	.adjacent_mem_id = INVALID_HEAP_ID,
 	.align = PAGE_SIZE,
 };
+#endif
 
 /**
  * These heaps are listed in the order they will be allocated.
@@ -4684,6 +4686,7 @@ static struct ion_platform_data ion_pdata = {
 			.type	= ION_HEAP_TYPE_SYSTEM,
 			.name	= ION_VMALLOC_HEAP_NAME,
 		},
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 		/* PMEM_MDP = SF */
 		{
 			.id	= ION_SF_HEAP_ID,
@@ -4693,6 +4696,7 @@ static struct ion_platform_data ion_pdata = {
 			.has_outer_cache = 1,
 			.extra_data = (void *)&co_ion_pdata,
 		},
+#endif
 	}
 };
 
@@ -4714,47 +4718,62 @@ static struct memtype_reserve msm7x30_reserve_table[] __initdata = {
 	},
 };
 
+unsigned long msm_ion_camera_size;
+static void fix_sizes(void)
+{
+#ifdef CONFIG_ION_MSM
+	msm_ion_camera_size = pmem_adsp_size;
+#endif
+}
+
 static void __init size_pmem_devices(void)
 {
 #ifdef CONFIG_ANDROID_PMEM
 	android_pmem_adsp_pdata.size = pmem_adsp_size;
-#ifndef CONFIG_ION_MSM
+#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 	android_pmem_pdata.size = pmem_sf_size;
 #endif
 #endif
 }
 
+#ifdef CONFIG_ANDROID_PMEM
 static void __init reserve_memory_for(struct android_pmem_platform_data *p)
 {
-	pr_info("%s: reserve %lu bytes from memory %d for %s.\n", __func__, p->size, p->memory_type, p->name);
-	msm7x30_reserve_table[p->memory_type].size += p->size;
+	if (p->size > 0) {
+		pr_info("%s: reserve %lu bytes from memory %d for %s.\n", __func__, p->size, p->memory_type, p->name);
+		msm7x30_reserve_table[p->memory_type].size += p->size;
+	}
 }
+#endif
 
 static void __init reserve_pmem_memory(void)
 {
 #ifdef CONFIG_ANDROID_PMEM
 	reserve_memory_for(&android_pmem_adsp_pdata);
+        msm7x30_reserve_table[MEMTYPE_EBI0].size += PMEM_KERNEL_EBI0_SIZE;
+#ifndef CONFIG_MSM_MULTIMEDIA_USE_ION
 	reserve_memory_for(&android_pmem_pdata);
-	msm7x30_reserve_table[MEMTYPE_EBI0].size += PMEM_KERNEL_EBI0_SIZE;
+#endif
 #endif
 }
 
 static void __init size_ion_devices(void)
 {
-#ifdef CONFIG_ION_MSM
-	ion_pdata.heaps[1].size = MSM_PMEM_SF_SIZE;
+#ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
+	ion_pdata.heaps[1].size = MSM_ION_SF_SIZE;
 #endif
 }
 
 static void __init reserve_ion_memory(void)
 {
-#ifdef CONFIG_ION_MSM
-	msm7x30_reserve_table[MEMTYPE_EBI0].size += MSM_PMEM_SF_SIZE;
+#if defined(CONFIG_ION_MSM) && defined(CONFIG_MSM_MULTIMEDIA_USE_ION)
+	msm7x30_reserve_table[MEMTYPE_EBI0].size += MSM_ION_SF_SIZE;
 #endif
 }
 
 static void __init msm7x30_calculate_reserve_sizes(void)
 {
+	fix_sizes();
 	size_pmem_devices();
 	reserve_pmem_memory();
 	size_ion_devices();
